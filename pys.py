@@ -51,6 +51,7 @@ def main():
     import_targets = []
     imports = {}
     no_pipe = False
+    no_split = False
     relative_import = False
     sep = None
     print_sep = None
@@ -64,6 +65,8 @@ def main():
                     raise NoArgumentException(arg)
             case "-n" | "--no-pipe":
                 no_pipe = True
+            case "--no-split":
+                no_split = True
             case "--relative-import":
                 relative_import = True
             case "-s" | "--sep":
@@ -100,11 +103,13 @@ def main():
         else:
             print(evaluated, sep=print_sep)
 
-    if not no_pipe:
+    if no_pipe:
+        run()
+    elif no_split:
+        run(RandomAccessList((''.join(sys.stdin.readlines()), )))
+    else:
         for line in sys.stdin.readlines():
             run(parse_args(line, sep))
-    else:
-        run()
 
 
 if __name__ == "__main__":
