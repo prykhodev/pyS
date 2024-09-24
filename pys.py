@@ -1,8 +1,51 @@
 #!/usr/bin/env python3
+import contextlib
 import sys
 from types import ModuleType
 from typing import Iterable, Iterator, Mapping, SupportsIndex, TypeVar, Any
 import importlib
+import argparse
+
+class Pys:
+    import_targets: list[str]|None
+    relative_import: bool
+    print_sep: str
+    no_pipe: bool
+    no_split: bool
+    sep: str
+    code: str
+
+    def __init__(self) -> None:
+        parser = argparse.ArgumentParser(
+            prog='pys',
+            description='awk inspired command line tool using Python'
+        )
+
+        parser.add_argument('code')
+        parser.add_argument('-i', '--import', help='modules to be imported', action='extend', dest='import_targets')
+        parser.add_argument('-n', '--no-pipe', action='store_true', help='don\'t read arguments from stdin')
+        parser.add_argument('--relative-import', action='store_true',
+                            help='sets import behavior to \'import [module]\', instead of \' from [module] import *\'')
+        parser.add_argument('--no-split', action='store_true', help='treat input as single argument')
+        parser.add_argument('-s', '--sep', help='input arguments separator')
+        parser.add_argument('-p', '--print-sep', help='output arguments separator')
+        parser.add_argument('-V', '--version', action='version', version='0.9 demo')
+
+        parser.parse_args(namespace=self)
+
+        self.has_star = self.code[0] == "*"
+        self.code = self.code if not self.has_star else self.code[1:]
+
+    def run(self, locals: Mapping[str, object]|None = None) -> None:
+        evaluated = eval(
+            self.code,
+            None,
+            locals
+        )
+        if self.has_star:
+            print(*evaluated, sep=self.print_sep, file=sys.stdout)
+        else:
+            print(evaluated, sep=self.print_sep, file=sys.stdout)
 
 
 class NoArgumentException(Exception):
@@ -11,14 +54,13 @@ class NoArgumentException(Exception):
 
 
 class RandomAccessList(list[str]):
-    T = TypeVar("T", SupportsIndex, slice, Iterable)
+    T = TypeVar("T", SupportsIndex, slice, Iterable[Any])
 
     def __getitem__(self, key: T) -> Any:
         if isinstance(key, Iterable):
             return [self[i] for i in key]
         else:
             return super().__getitem__(key)
-
 
 class LocalArgs(Mapping[str, object]):
     def __init__(self, args: list[str], imports: dict[str, ModuleType]) -> None:
@@ -48,69 +90,26 @@ def parse_args(line: str, sep: str|None =" ") -> list[str]:
 
 
 def main():
-    import_targets = []
-    imports = {}
-    no_pipe = False
-    no_split = False
-    relative_import = False
-    sep = None
-    print_sep = None
-    for arg in (it := iter(sys.argv[:-1])):
-        match arg:
-            case "-i" | "--import":
-                try:
-                    argval = next(it)
-                    import_targets.append(argval)
-                except StopIteration:
-                    raise NoArgumentException(arg)
-            case "-n" | "--no-pipe":
-                no_pipe = True
-            case "--no-split":
-                no_split = True
-            case "--relative-import":
-                relative_import = True
-            case "-s" | "--sep":
-                try:
-                    sep = next(it)
-                except StopIteration:
-                    raise NoArgumentException(arg)
-            case "-p" | "--print-sep":
-                try:
-                    print_sep = next(it)
-                    if print_sep == "\\n":
-                        print_sep = "\n"
-                except StopIteration:
-                    raise NoArgumentException(arg)
+    imports: dict[str, ModuleType] = {}
+    pys = Pys()
+    if pys.import_targets is not None:
+        for import_target in pys.import_targets:
+            if pys.relative_import:
+                imports[import_target] = importlib.import_module(import_target)
+            else:
+                imports.update(importlib.import_module(import_target).__dict__)
 
-    for import_target in import_targets:
-        if relative_import:
-            imports[import_target] = importlib.import_module(import_target)
-        else:
-            imports.update(importlib.import_module(import_target).__dict__)
-
-
-    def run(args=None) -> None:
-        code = sys.argv[-1]
-        has_star = code[0] == "*"
-        code = code if not has_star else code[1:]
-        evaluated = eval(
-            code,
-            None,
-            LocalArgs(args if args is not None else [], imports),
-        )
-        if has_star:
-            print(*evaluated, sep=print_sep)
-        else:
-            print(evaluated, sep=print_sep)
-
-    if no_pipe:
-        run()
-    elif no_split:
-        run(RandomAccessList((''.join(sys.stdin.readlines()), )))
+    if pys.no_pipe:
+        pys.run()
+    elif pys.no_split:
+        pys.run(LocalArgs(RandomAccessList((''.join(sys.stdin.readlines()), )), imports))
     else:
-        for line in sys.stdin.readlines():
-            run(parse_args(line, sep))
+        for line in sys.stdin:
+            pys.run(LocalArgs(parse_args(line, pys.sep), imports))
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
