@@ -17,7 +17,7 @@ class Pys:
 
     def __init__(self) -> None:
         parser = argparse.ArgumentParser(
-            prog='pys',
+            prog='pyS',
             description='awk inspired command line tool using Python'
         )
 
